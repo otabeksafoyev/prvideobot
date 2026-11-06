@@ -37,6 +37,7 @@ def validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str | None:
 
 def sanitize(text: str, hosts: tuple[str, ...] = ()) -> str:
     """Matndan URL va domenlarni yashiradi."""
+    text = re.sub(r"\b(?:socks\d?[a-z]?|https?)://\S+", "[havola]", text, flags=re.I)
     text = URL_RE.sub("[havola]", text)
     for h in hosts:
         text = re.sub(re.escape(h), "***", text, flags=re.I)

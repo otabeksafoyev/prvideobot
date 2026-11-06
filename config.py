@@ -27,6 +27,7 @@ class Settings:
     log_level: str
     api_id: int | None = None
     api_hash: str | None = None
+    ytdlp_proxy: str | None = None
 
     @property
     def use_mtproto(self) -> bool:
@@ -75,4 +76,5 @@ def load_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         api_id=api_id,
         api_hash=api_hash,
+        ytdlp_proxy=os.getenv("YTDLP_PROXY", "").strip() or None,
     )

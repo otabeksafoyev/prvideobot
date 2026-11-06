@@ -61,6 +61,8 @@ def _friendly(exc: BaseException) -> str:
         return "Video topilmadi yoki o'chirib yuborilgan."
     if any(k in msg for k in ("geo", "your country", "your region", "not available in")):
         return "Video sizning hududingizda mavjud emas."
+    if "proxy" in msg or "socks" in msg:
+        return "Proksi bilan ulanib bo'lmadi. YTDLP_PROXY sozlamasini tekshiring."
     if "ffmpeg" in msg or "ffprobe" in msg:
         return "FFmpeg bilan xatolik. Server sozlamalarini tekshiring."
     if any(k in msg for k in ("timed out", "timeout", "connection", "network", "temporary failure", "name resolution", "getaddrinfo")):
@@ -84,6 +86,8 @@ def _base_opts(settings: Settings) -> dict:
     }
     if settings.ffmpeg_location:
         opts["ffmpeg_location"] = settings.ffmpeg_location
+    if settings.ytdlp_proxy:
+        opts["proxy"] = settings.ytdlp_proxy
     return opts
 
 
