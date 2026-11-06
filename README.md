@@ -37,6 +37,12 @@ Oddiy Bot API 50 MB gacha fayl yuboradi. 1080p videolar ko'pincha undan katta.
 `.env` ga `TG_API_ID` va `TG_API_HASH` yozing (https://my.telegram.org -> API development tools).
 Shunda video MTProto orqali 2 GB gacha, asl sifatda yuboriladi (`MAX_UPLOAD_MB` e'tiborga olinmaydi).
 
+## Kodlar va xarajat nazorati
+Har bir video 50 bilan boshlanadigan kod oladi (5001, 5002, ... 5010 ...). Bir xil video har doim bir xil kod oladi.
+Kodlar va oylik trafik `DATA_DIR` ichida saqlanadi. Railway'da bu papka o'chib ketmasligi uchun
+servisga Volume ulang (mount path: `/data`). `/stat` buyrug'i oylik trafikni ko'rsatadi,
+`MONTHLY_LIMIT_GB` limitga yetganda bot yangi videolarni to'xtatadi.
+
 ## Eslatma
 - Bot cookie/login ishlatmaydi, yopiq yoki DRM bilan himoyalangan videolarni yuklamaydi.
 - Faqat o'zingizda yuklab olish huquqi bor kontentdan va sayt shartlariga mos holda foydalaning.

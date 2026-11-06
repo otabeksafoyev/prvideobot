@@ -15,7 +15,7 @@ from aiogram.enums import ParseMode
 
 from config import Settings, load_settings
 from handlers import AdminMiddleware, router
-from store import PendingStore
+from registry import Registry
 from uploader import TelegramUploader
 from utils import SanitizingFilter
 
@@ -76,6 +76,9 @@ async def main() -> None:
         session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    registry = Registry(settings.data_dir / "registry.json")
+
     uploader = None
     if settings.use_mtproto:
         uploader = TelegramUploader(settings)
@@ -84,7 +87,7 @@ async def main() -> None:
 
     dp = Dispatcher(
         settings=settings,
-        store=PendingStore(),
+        registry=registry,
         uploader=uploader,
         gate=asyncio.Semaphore(settings.max_concurrent),
     )

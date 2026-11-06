@@ -28,6 +28,10 @@ class Settings:
     api_id: int | None = None
     api_hash: str | None = None
     ytdlp_proxy: str | None = None
+    max_height: int = 1080
+    data_dir: Path = Path("data")
+    monthly_limit_gb: float = 50.0
+    upload_workers: int = 8
 
     @property
     def use_mtproto(self) -> bool:
@@ -77,4 +81,8 @@ def load_settings() -> Settings:
         api_id=api_id,
         api_hash=api_hash,
         ytdlp_proxy=os.getenv("YTDLP_PROXY", "").strip() or None,
+        max_height=max(144, int(os.getenv("MAX_HEIGHT", "1080"))),
+        data_dir=Path(os.getenv("DATA_DIR", "./data")).resolve(),
+        monthly_limit_gb=float(os.getenv("MONTHLY_LIMIT_GB", "50")),
+        upload_workers=max(1, min(16, int(os.getenv("UPLOAD_WORKERS", "8")))),
     )

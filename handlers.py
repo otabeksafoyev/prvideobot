@@ -3,23 +3,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
 import shutil
 import time
 
 from aiogram import BaseMiddleware, F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
 from aiogram.filters import Command
-from aiogram.types import (
-    CallbackQuery,
-    FSInputFile,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from config import Settings
-from downloader import UserFacingError, download_video, fetch_info
-from store import PendingStore
+from downloader import UserFacingError, download_video
+from registry import Registry
 from uploader import TelegramUploader
 from utils import (
     esc,
@@ -29,6 +24,7 @@ from utils import (
     progress_bar,
     safe_filename,
     validate_url,
+    viewkey_of,
 )
 
 log = logging.getLogger(__name__)
@@ -96,7 +92,8 @@ async def cmd_start(message: Message):
         "ᐅ <b>Private Video Downloader</b>\n\n"
         "Video sahifasining to'liq havolasini yuboring:\n"
         "<code>https://.../view_video.php?viewkey=...</code>\n\n"
-        "Bot sifatlarni aniqlaydi, siz tanlaysiz, video MP4 holida yuboriladi."
+        "Bot eng yuqori sifatni o'zi tanlaydi, video MP4 holida yuboriladi va unga kod beriladi.\n"
+        "/stat — oylik statistika"
     )
 
 
@@ -106,8 +103,23 @@ async def cmd_id(message: Message):
 
 
 # ───────────── Havola qabul qilish ─────────────
+@router.message(Command("stat"))
+async def cmd_stat(message: Message, settings: Settings, registry: Registry):
+    limit = f"{settings.monthly_limit_gb:g} GB" if settings.monthly_limit_gb > 0 else "cheklanmagan"
+    await message.answer(
+        f"๏ Shu oy yuborilgan: {fmt_size(registry.usage_bytes())} / {limit}\n"
+        f"Jami videolar: {registry.video_count()}"
+    )
+
+
 @router.message(F.text)
-async def on_link(message: Message, settings: Settings, store: PendingStore):
+async def on_link(
+    message: Message,
+    settings: Settings,
+    gate: asyncio.Semaphore,
+    uploader: TelegramUploader | None,
+    registry: Registry,
+):
     raw = extract_url(message.text)
     if not raw:
         await message.answer("Video sahifasining havolasini yuboring.")
@@ -118,126 +130,51 @@ async def on_link(message: Message, settings: Settings, store: PendingStore):
         await message.answer("Havola noto'g'ri yoki bu manba qo'llab-quvvatlanmaydi.")
         return
 
+    if registry.over_budget(settings.monthly_limit_gb):
+        await message.answer("✗ Oylik trafik limiti tugadi. /stat ni ko'ring yoki MONTHLY_LIMIT_GB ni oshiring.")
+        return
+
     # Chatda havola qolib ketmasligi uchun foydalanuvchi xabarini o'chiramiz
     with contextlib.suppress(Exception):
         await message.delete()
 
-    status = await message.answer("ᐅ Tekshirilmoqda…")
-    try:
-        info = await asyncio.to_thread(fetch_info, url, settings)
-    except UserFacingError as e:
-        await safe_edit(status, f"✗ {esc(str(e))}")
-        return
-    except Exception:
-        log.exception("fetch_info kutilmagan xato")
-        await safe_edit(status, "✗ Kutilmagan xatolik yuz berdi.")
-        return
-
-    token = store.add(url, info, message.from_user.id)
-    rows, row = [], []
-    for h, size in sorted(info.qualities.items()):
-        label = f"{h}p · ~{fmt_size(size)}" if size else f"{h}p"
-        row.append(InlineKeyboardButton(text=label, callback_data=f"dl:{token}:{h}"))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    rows.append([InlineKeyboardButton(text="✓ Eng yaxshisi (avto)", callback_data=f"dl:{token}:0")])
-    rows.append([InlineKeyboardButton(text="✗ Bekor qilish", callback_data=f"cancel:{token}")])
-
-    avail = ", ".join(f"{h}p" for h in sorted(info.qualities))
-    await safe_edit(
-        status,
-        f"๏ <b>{esc(info.title[:200])}</b>\n"
-        f"Davomiyligi: {fmt_duration(info.duration)}\n"
-        f"Mavjud sifatlar: {avail}\n\n"
-        "Sifatni tanlang:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
-    )
-
-
-@router.callback_query(F.data.startswith("cancel:"))
-async def on_cancel(cb: CallbackQuery, store: PendingStore):
-    item = store.get(cb.data.split(":", 1)[1], cb.from_user.id)
-    if item and not item.busy:
-        store.pop(cb.data.split(":", 1)[1])
-        await cb.message.edit_text("✗ Bekor qilindi.")
-    await cb.answer()
-
-
-# ───────────── Yuklab olish va yuborish ─────────────
-@router.callback_query(F.data.startswith("dl:"))
-async def on_download(
-    cb: CallbackQuery,
-    settings: Settings,
-    store: PendingStore,
-    gate: asyncio.Semaphore,
-    uploader: TelegramUploader | None,
-):
-    try:
-        _, token, h = cb.data.split(":")
-        height = int(h)
-    except ValueError:
-        await cb.answer()
-        return
-
-    item = store.get(token, cb.from_user.id)
-    if not item:
-        await cb.answer("Sessiya tugagan. Havolani qayta yuboring.", show_alert=True)
-        return
-    if item.busy:
-        await cb.answer("Allaqachon yuklanmoqda.")
-        return
-
+    status = await message.answer("ᐅ Boshlanmoqda…")
     limit = settings.max_upload_bytes
-    q = item.info.qualities
-    if height == 0:  # avto: limitga sig'adigan eng yuqori sifat
-        fitting = [x for x, s in q.items() if not s or s <= limit]
-        height = max(fitting) if fitting else min(q)
-    if height not in q:
-        await cb.answer("Bu sifat mavjud emas.", show_alert=True)
-        return
-    est = q[height]
-    if est and est > limit * 1.1:
-        await cb.answer(
-            f"Bu sifat Telegram limitidan katta (~{fmt_size(est)}, limit {fmt_size(limit)}). "
-            "Pastroq sifatni tanlang"
-            + ("." if settings.use_mtproto else " yoki .env ga TG_API_ID/TG_API_HASH qo'shing (2 GB gacha)."),
-            show_alert=True,
-        )
-        return
-
-    await cb.answer()
-    item.busy = True
-    msg = cb.message
-    job_dir = settings.download_dir / f"{cb.from_user.id}_{token}"
+    job_dir = settings.download_dir / f"{message.from_user.id}_{secrets.token_hex(4)}"
     loop = asyncio.get_running_loop()
 
     try:
-        await msg.edit_text(f"ᐅ Navbatda… ({height}p)")
+        height = settings.max_height
         t_start = time.monotonic()
         async with gate:
-            reporter = ProgressReporter(msg, loop)
-            result = await asyncio.to_thread(
-                download_video, item.url, height, job_dir, settings, reporter
-            )
+            reporter = ProgressReporter(status, loop)
+            for _ in range(3):
+                result = await asyncio.to_thread(
+                    download_video, url, height, job_dir, settings, reporter
+                )
+                size = result.path.stat().st_size
+                if size <= limit:
+                    break
+                # Telegram limitidan katta: bir pog'ona pastroq sifatga tushamiz
+                shutil.rmtree(job_dir, ignore_errors=True)
+                lower = [h for h in (720, 480, 360) if h < (result.height or height)]
+                if not lower:
+                    raise UserFacingError("Fayl hajmi Telegram limitidan katta.")
+                height = lower[0]
+                await safe_edit(status, f"ᐅ Fayl katta, {height}p ga tushirilmoqda…")
+            else:
+                raise UserFacingError("Fayl hajmi Telegram limitidan katta.")
         t_download = time.monotonic() - t_start
 
-        size = result.path.stat().st_size
-        if size > limit:
-            raise UserFacingError(
-                f"Fayl hajmi ({fmt_size(size)}) Telegram limitidan ({fmt_size(limit)}) katta. "
-                "Pastroq sifatni tanlang."
-            )
-
-        await msg.edit_text("ᐅ Telegramga yuborilmoqda…")
+        code = registry.code_for(viewkey_of(url))
         caption = (
             f"<b>{esc(result.title[:200])}</b>\n"
             f"Davomiyligi: {fmt_duration(result.duration)}\n"
             f"Sifat: {result.height or height}p\n"
-            f"Hajmi: {fmt_size(size)}"
+            f"Kod: {code}"
         )
+        await safe_edit(status, "ᐅ Telegramga yuborilmoqda…")
+
         if uploader is not None:
             last = {"t": 0.0}
             started = time.monotonic()
@@ -256,11 +193,11 @@ async def on_download(
                     text += f" · ~{fmt_duration(eta)}"
                 # Progress xabari xato bersa ham yuborish to'xtab qolmasin
                 with contextlib.suppress(Exception):
-                    await msg.edit_text(text)
+                    await status.edit_text(text)
 
             await uploader.send_video(
-                chat_id=msg.chat.id,
-                username=cb.from_user.username,
+                chat_id=status.chat.id,
+                username=message.from_user.username,
                 path=result.path,
                 caption=caption,
                 duration=result.duration,
@@ -270,8 +207,8 @@ async def on_download(
                 on_progress=upload_progress,
             )
         else:
-            await cb.bot.send_video(
-                chat_id=msg.chat.id,
+            await message.bot.send_video(
+                chat_id=status.chat.id,
                 video=FSInputFile(result.path, filename=safe_filename(result.title)),
                 caption=caption,
                 duration=result.duration or None,
@@ -280,21 +217,22 @@ async def on_download(
                 supports_streaming=True,
                 request_timeout=900,
             )
+
+        registry.add_usage(size)
         t_upload = time.monotonic() - t_start - t_download
         log.info(
-            "vaqt: yuklash %.0fs (%s/s), yuborish %.0fs (%s/s), hajm %s",
+            "vaqt: yuklash %.0fs (%s/s), yuborish %.0fs (%s/s), hajm %s, kod %s",
             t_download, fmt_size(size / max(t_download, 0.1)),
             t_upload, fmt_size(size / max(t_upload, 0.1)),
-            fmt_size(size),
+            fmt_size(size), code,
         )
         with contextlib.suppress(Exception):
-            await msg.delete()
+            await status.delete()
 
     except UserFacingError as e:
-        await safe_edit(msg, f"✗ {esc(str(e))}")
+        await safe_edit(status, f"✗ {esc(str(e))}")
     except Exception:
-        log.exception("Yuborishda kutilmagan xato")
-        await safe_edit(msg, "✗ Kutilmagan xatolik yuz berdi.")
+        log.exception("Kutilmagan xato")
+        await safe_edit(status, "✗ Kutilmagan xatolik yuz berdi.")
     finally:
         shutil.rmtree(job_dir, ignore_errors=True)  # vaqtinchalik fayllar
-        store.pop(token)  # URL xotiradan o'chadi

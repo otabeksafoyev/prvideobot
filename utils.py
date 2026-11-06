@@ -35,6 +35,10 @@ def validate_url(url: str, allowed_hosts: tuple[str, ...]) -> str | None:
     return f"{p.scheme}://{p.netloc}{p.path}?viewkey={key}"
 
 
+def viewkey_of(url: str) -> str:
+    return (parse_qs(urlparse(url).query).get("viewkey") or [""])[0]
+
+
 def sanitize(text: str, hosts: tuple[str, ...] = ()) -> str:
     """Matndan URL va domenlarni yashiradi."""
     text = re.sub(r"\b(?:socks\d?[a-z]?|https?)://\S+", "[havola]", text, flags=re.I)

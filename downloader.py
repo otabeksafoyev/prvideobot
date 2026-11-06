@@ -61,6 +61,8 @@ def _friendly(exc: BaseException) -> str:
         return "Video topilmadi yoki o'chirib yuborilgan."
     if any(k in msg for k in ("geo", "your country", "your region", "not available in")):
         return "Video sizning hududingizda mavjud emas."
+    if "requested format" in msg:
+        return "Mos format topilmadi."
     if "proxy" in msg or "socks" in msg:
         return "Proksi bilan ulanib bo'lmadi. YTDLP_PROXY sozlamasini tekshiring."
     if "ffmpeg" in msg or "ffprobe" in msg:
@@ -166,9 +168,9 @@ def fetch_info(url: str, settings: Settings) -> VideoInfo:
 def _format_selector(height: int) -> str:
     # Avval H.264 (Telegram'da eng yaxshi ishlaydi), keyin istalgan kodek.
     return (
-        f"bv*[height<={height}][vcodec^=avc1]+ba[ext=m4a]"
-        f"/bv*[height<={height}]+ba"
-        f"/b[height<={height}]"
+        f"bv*[height<=?{height}][vcodec^=avc1]+ba[ext=m4a]"
+        f"/bv*[height<=?{height}]+ba"
+        f"/b[height<=?{height}]"
     )
 
 
