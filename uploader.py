@@ -103,7 +103,7 @@ class TelegramUploader:
         height: int | None,
         filename: str,
         on_progress: ProgressCb,
-    ) -> None:
+    ) -> int:
         entity = await self._resolve(chat_id, username)
         try:
             handle = await self._parallel_upload(path, filename, on_progress)
@@ -112,7 +112,7 @@ class TelegramUploader:
             handle = await self.client.upload_file(
                 str(path), part_size_kb=512, file_name=filename, progress_callback=on_progress
             )
-        await self.client.send_file(
+        msg = await self.client.send_file(
             entity,
             handle,
             caption=caption,
@@ -129,3 +129,4 @@ class TelegramUploader:
                 DocumentAttributeFilename(filename),
             ],
         )
+        return msg.id

@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Obuna tariflari: oy -> narx (so'm)
+PLANS: dict[int, int] = {1: 30_000, 2: 50_000, 3: 70_000}
+
 
 def _csv(name: str) -> list[str]:
     return [x.strip().lower() for x in os.getenv(name, "").split(",") if x.strip()]
@@ -32,6 +35,10 @@ class Settings:
     data_dir: Path = Path("data")
     monthly_limit_gb: float = 50.0
     upload_workers: int = 8
+    payment_channel_id: int = -1003525618102  # cheklar tushadigan kanal
+    video_channel_id: int = -1004343251790  # videolar (sifat + kod) tushadigan kanal
+    card_number: str | None = None
+    card_owner: str | None = None
 
     @property
     def use_mtproto(self) -> bool:
@@ -85,4 +92,8 @@ def load_settings() -> Settings:
         data_dir=Path(os.getenv("DATA_DIR", "./data")).resolve(),
         monthly_limit_gb=float(os.getenv("MONTHLY_LIMIT_GB", "50")),
         upload_workers=max(1, min(16, int(os.getenv("UPLOAD_WORKERS", "8")))),
+        payment_channel_id=int(os.getenv("PAYMENT_CHANNEL_ID", "-1003525618102")),
+        video_channel_id=int(os.getenv("VIDEO_CHANNEL_ID", "-1004343251790")),
+        card_number=os.getenv("CARD_NUMBER", "").strip() or None,
+        card_owner=os.getenv("CARD_OWNER", "").strip() or None,
     )

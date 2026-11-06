@@ -43,6 +43,17 @@ Kodlar va oylik trafik `DATA_DIR` ichida saqlanadi. Railway'da bu papka o'chib k
 servisga Volume ulang (mount path: `/data`). `/stat` buyrug'i oylik trafikni ko'rsatadi,
 `MONTHLY_LIMIT_GB` limitga yetganda bot yangi videolarni to'xtatadi.
 
+## Obuna va kanallar
+Oddiy foydalanuvchi `/start` bersa, obuna tariflari chiqadi (1 oy — 30 000, 2 oy — 50 000, 3 oy — 70 000 so'm).
+Tarif tanlangach foydalanuvchi chek skrinshotini yuboradi; u faqat `PAYMENT_CHANNEL_ID` kanaliga tushadi
+va ostida "Tasdiqlash / Rad etish" tugmalari bo'ladi. Tasdiqlansa obuna avtomatik yoqiladi.
+Karta ma'lumoti `CARD_NUMBER` va `CARD_OWNER` orqali beriladi.
+
+Admin buyruqlari: `/admin` (panel), `/grant ID KUN`, `/revoke ID`, `/subs`, `/stat`.
+
+Har bir yangi video `VIDEO_CHANNEL_ID` kanaliga faqat 1 marta, sifati va kodi bilan tashlanadi.
+Bot ikkala kanalda ham administrator bo'lishi kerak (xabar yuborish huquqi bilan).
+
 ## Eslatma
 - Bot cookie/login ishlatmaydi, yopiq yoki DRM bilan himoyalangan videolarni yuklamaydi.
 - Faqat o'zingizda yuklab olish huquqi bor kontentdan va sayt shartlariga mos holda foydalaning.

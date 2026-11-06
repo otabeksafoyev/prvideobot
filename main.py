@@ -14,7 +14,7 @@ from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
 
 from config import Settings, load_settings
-from handlers import AdminMiddleware, router
+from handlers import router
 from registry import Registry
 from uploader import TelegramUploader
 from utils import SanitizingFilter
@@ -91,9 +91,6 @@ async def main() -> None:
         uploader=uploader,
         gate=asyncio.Semaphore(settings.max_concurrent),
     )
-    admin_mw = AdminMiddleware(settings.admin_ids)
-    dp.message.outer_middleware(admin_mw)
-    dp.callback_query.outer_middleware(admin_mw)
     dp.include_router(router)
 
     await bot.delete_webhook(drop_pending_updates=True)
